@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Full-screen, controller-first game library. Rendered with Slint's software
+// renderer: no GPU context, and frames are drawn only when something changes.
+
+export struct Tile {
+    key: string,
+    title: string,
+    poster: image,
+    has-poster: bool,
+    icon: image,
+    has-icon: bool,
+    accent: color,
+}
+
+component Glyph inherits Rectangle {
+    in property <string> label;
+    in property <length> size: 30px;
+    width: max(self.size, txt.preferred-width + 16px);
+    height: self.size;
+    border-radius: self.size / 2;
+    background: #ffffff;
+    txt := Text {
+        text: root.label;
+        color: #0b0f17;
+        font-size: root.size * 0.5;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component Hint inherits HorizontalLayout {
+    in property <string> glyph;
+    in property <string> label;
+    spacing: 10px;
+    alignment: start;
+    VerticalLayout {
+        alignment: center;
+        Glyph { label: root.glyph; }
+    }
+    Text {
+        text: root.label;
+        color: #d8dfec;
+        font-size: 17px;
+        font-weight: 500;
+        vertical-alignment: center;
+    }
+}
+
+component TileView inherits Rectangle {
+    in property <Tile> tile;
+    in property <bool> selected;
+    callback clicked();
+
+    // Selection ring drawn outside the poster.
+    Rectangle {
+        x: -7px;
+        y: -7px;
+        width: parent.width + 14px;
+        height: parent.height + 14px;
+        border-radius: 15px;
+        border-width: 4px;
+        border-color: #ffffff;
+        visible: root.selected;
+    }
+
+    body := Rectangle {
+        border-radius: 9px;
+        clip: true;
+        background: @linear-gradient(160deg, root.tile.accent 0%, root.tile.accent.darker(0.65) 100%);
+
+        if !root.tile.has-poster: VerticalLayout {
+            padding: 16px;
+            spacing: 14px;
+            alignment: center;
+            if root.tile.has-icon: Image {
+                source: root.tile.icon;
+                height: 84px;
+                image-fit: contain;
+            }
+            Text {
+                text: root.tile.title;
+                color: #ffffff;
+                font-size: 19px;
+                font-weight: 700;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+            }
+        }
+
+        if root.tile.has-poster: Image {
+            width: parent.width;
+            height: parent.height;
+            source: root.tile.poster;
+            image-fit: cover;
+        }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Games";
+    default-font-family: "Fira Sans";
+    background: #090c12;
+    preferred-width: 1920px;
+    preferred-height: 1080px;
+
+    in property <[Tile]> tiles;
+    in property <[string]> tabs;
+    in property <int> tab-index;
+    in property <string> sort-label;
+    in property <string> clock;
+    in property <string> sel-title;
+    in property <string> sel-meta;
+    in property <image> backdrop;
+    in property <bool> has-backdrop;
+    in property <string> empty-text: "No games found";
+    in-out property <int> selected;
+
+    callback move(int, int);
+    callback activate(int);
+    callback close-launcher();
+    callback next-tab(int);
+    callback toggle-sort();
+    callback all-apps();
+
+    property <length> pad: 72px;
+    property <length> tile-w: 172px;
+    property <length> tile-h: 258px;
+    property <length> gap: 26px;
+    property <length> row-pitch: root.tile-h + root.gap;
+    out property <int> columns: Math.max(1, Math.floor((root.width - 2 * root.pad + root.gap) / (root.tile-w + root.gap)));
+    // Center the grid: split the leftover width evenly on both sides.
+    property <length> grid-x: Math.max(0px, (flick.width - root.columns * root.tile-w - (root.columns - 1) * root.gap) / 2);
+
+    // Keep the selected row inside the scroll viewport.
+    public function ensure-visible() {
+        // Before the first layout pass the viewport has no height yet.
+        if (root.tiles.length == 0 || flick.height <= 0) {
+            return;
+        }
+        let row = Math.floor(root.selected / root.columns);
+        let top = row * root.row-pitch;
+        let bottom = top + root.tile-h + 2 * root.gap;
+        if (top + flick.content-y < 0) {
+            flick.content-y = -top;
+        } else if (bottom + flick.content-y > flick.height) {
+            flick.content-y = flick.height - bottom;
+        }
+    }
+
+    // Blurred art of the selected game, darkened for legibility.
+    if root.has-backdrop: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.backdrop;
+        image-fit: cover;
+        opacity: 0.6;
+    }
+    Rectangle {
+        background: @linear-gradient(180deg, #090c12b0 0%, #090c1280 30%, #090c12e8 62%, #090c12 100%);
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.LeftArrow) { root.move(-1, 0); return accept; }
+            if (event.text == Key.RightArrow) { root.move(1, 0); return accept; }
+            if (event.text == Key.UpArrow) { root.move(0, -1); return accept; }
+            if (event.text == Key.DownArrow) { root.move(0, 1); return accept; }
+            if (event.text == Key.Return || event.text == " ") { root.activate(root.selected); return accept; }
+            if (event.text == Key.Escape) { root.close-launcher(); return accept; }
+            if (event.text == Key.Tab) { root.next-tab(event.modifiers.shift ? -1 : 1); return accept; }
+            if (event.text == Key.Backtab) { root.next-tab(-1); return accept; }
+            if (event.text == "s" || event.text == "y") { root.toggle-sort(); return accept; }
+            if (event.text == "a" || event.text == Key.Menu) { root.all-apps(); return accept; }
+            return reject;
+        }
+
+        VerticalLayout {
+            padding-left: root.pad;
+            padding-right: root.pad;
+            padding-top: 34px;
+            spacing: 0px;
+
+            // Category tabs and clock.
+            HorizontalLayout {
+                height: 44px;
+                spacing: 12px;
+                VerticalLayout { alignment: center; Glyph { label: "LB"; size: 32px; } }
+                for name[i] in root.tabs: Rectangle {
+                    width: label.preferred-width + 36px;
+                    border-radius: 22px;
+                    background: i == root.tab-index ? #ffffff : #ffffff1c;
+                    label := Text {
+                        text: name;
+                        color: i == root.tab-index ? #0b0f17 : #e4e9f2;
+                        font-size: 18px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                    TouchArea { clicked => { root.next-tab(i - root.tab-index); } }
+                }
+                VerticalLayout { alignment: center; Glyph { label: "RB"; size: 32px; } }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.clock;
+                    color: #e4e9f2;
+                    font-size: 22px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Selected game.
+            VerticalLayout {
+                padding-top: 54px;
+                padding-bottom: 26px;
+                spacing: 8px;
+                Text {
+                    text: root.tiles.length == 0 ? root.empty-text : root.sel-title;
+                    color: #ffffff;
+                    font-size: 46px;
+                    font-weight: 700;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.sel-meta;
+                    color: #b8c2d4;
+                    font-size: 19px;
+                    font-weight: 500;
+                }
+            }
+
+            // Poster grid.
+            flick := Flickable {
+                vertical-stretch: 1;
+                content-width: self.width;
+                content-height: Math.ceil(root.tiles.length / root.columns) * root.row-pitch + 2 * root.gap;
+                for tile[i] in root.tiles: TileView {
+                    x: root.grid-x + Math.mod(i, root.columns) * (root.tile-w + root.gap);
+                    y: root.gap + Math.floor(i / root.columns) * root.row-pitch;
+                    width: root.tile-w;
+                    height: root.tile-h;
+                    tile: tile;
+                    selected: i == root.selected;
+                    clicked => { root.activate(i); }
+                }
+            }
+
+            // Button hints.
+            HorizontalLayout {
+                height: 74px;
+                spacing: 34px;
+                alignment: end;
+                Hint { glyph: "A"; label: "Play"; }
+                Hint { glyph: "B"; label: "Close"; }
+                Hint { glyph: "Y"; label: "Sort: " + root.sort-label; }
+                Hint { glyph: "☰"; label: "All apps"; }
+            }
+        }
+    }
+
+    init => { keys.focus(); }
+}

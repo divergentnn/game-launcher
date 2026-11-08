@@ -1,0 +1,18 @@
+[package]
+name = "game-launcher"
+version = "0.1.0"
+edition = "2024"
+description = "Full-screen, controller-first game library for Wayland (Steam, Heroic, .desktop games), software-rendered with Slint"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/divergentnn/game-launcher"
+readme = "README.md"
+
+[dependencies]
+evdev = { version = "0.13.2", default-features = false }
+image = { version = "0.25.10", default-features = false, features = ["ico", "jpeg", "png"] }
+libc = "0.2"
+serde_json = "1"
+slint = { version = "1.18.1", default-features = false, features = ["std", "compat-1-2", "backend-winit-wayland", "renderer-software", "software-renderer-systemfonts"] }
+
+[build-dependencies]
+slint-build = "1.18.1"
